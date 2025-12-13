@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import UserManagement from './pages/UserManagement';
-import MoldSystem from './pages/MoldSystem'; // <--- IMPORTACIÓN CLAVE
+import MoldSystem from './pages/MoldSystem'; 
 import Layout from './components/Layout';
 import { getSession, clearSession } from './utils/storage';
 import History from './pages/History';
