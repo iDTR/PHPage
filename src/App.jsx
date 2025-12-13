@@ -41,7 +41,7 @@ function App() {
       {/* VISTAS */}
       {currentView === 'dashboard' && <Dashboard />}
       {currentView === 'users' && <UserManagement />}
-      {currentView === 'molds' && <MoldSystem />} {/* <--- PANTALLA CLAVE */}
+      {currentView === 'molds' && <MoldSystem />}
       {currentView === 'history' && <History />}
     </Layout>
   );
