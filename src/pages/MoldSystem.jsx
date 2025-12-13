@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Wrench, CheckCircle, Clock, AlertTriangle, PlayCircle, Timer, ListChecks, X, MessageSquare, Send } from 'lucide-react';
+import { ClipboardList, Wrench, CheckCircle, Clock, AlertTriangle, PlayCircle, Timer, ListChecks, X, MessageSquare, Send, ShieldAlert, AlertOctagon, Camera, Image as ImageIcon } from 'lucide-react';
 import { getMoves, saveMoves, getStoredMolds, getSession } from '../utils/storage';
 
 export default function MoldSystem() {
@@ -21,10 +21,16 @@ export default function MoldSystem() {
     safety: false
   });
 
-  // --- NUEVO: ESTADOS PARA CHAT (BITÁCORA) ---
+  // Estados para Chat (Bitácora)
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatJob, setChatJob] = useState(null); // El trabajo seleccionado para chatear
+  const [chatJob, setChatJob] = useState(null);
   const [newMessage, setNewMessage] = useState('');
+
+  // --- ESTADOS PARA REPORTE DE DAÑOS CON FOTO ---
+  const [isDamageModalOpen, setIsDamageModalOpen] = useState(false);
+  const [damageJobId, setDamageJobId] = useState(null);
+  const [damageDescription, setDamageDescription] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null); // Guardará la imagen en Base64
 
   useEffect(() => {
     setMoves(getMoves());
@@ -33,8 +39,6 @@ export default function MoldSystem() {
   const updateMoves = (newMoves) => {
     setMoves(newMoves);
     saveMoves(newMoves);
-    
-    // Si el chat está abierto, actualizamos la referencia local para ver el mensaje nuevo al instante
     if (chatJob) {
         const updatedJob = newMoves.find(m => m.id === chatJob.id);
         setChatJob(updatedJob);
@@ -65,7 +69,8 @@ export default function MoldSystem() {
       endTime: null,
       duration: null,
       completedBy: null,
-      comments: [] // <--- NUEVO: Array para guardar el chat
+      comments: [],
+      damageReport: null
     };
 
     updateMoves([...moves, newMove]);
@@ -107,7 +112,7 @@ export default function MoldSystem() {
     if(window.confirm("¿Eliminar registro?")) updateMoves(moves.filter(m => m.id !== id));
   };
 
-  // --- NUEVO: LÓGICA DE CHAT ---
+  // --- LÓGICA DE CHAT ---
   const openChat = (job) => {
     setChatJob(job);
     setNewMessage('');
@@ -117,28 +122,92 @@ export default function MoldSystem() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
+    addComment(chatJob.id, newMessage, user.name, user.role);
+    setNewMessage('');
+  };
 
+  const addComment = (jobId, text, author, role, image = null) => {
     const comment = {
         id: Date.now(),
-        author: user.name,
-        role: user.role,
-        text: newMessage,
+        author: author,
+        role: role,
+        text: text,
+        image: image, // Guardamos la imagen si existe
         date: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' ' + new Date().toLocaleDateString()
     };
-
-    // Agregar comentario al trabajo específico
     const updatedMoves = moves.map(m => {
-        if (m.id === chatJob.id) {
-            // Aseguramos que exista el array comments (por si es un registro viejo)
+        if (m.id === jobId) {
             const currentComments = m.comments || [];
             return { ...m, comments: [...currentComments, comment] };
         }
         return m;
     });
+    updateMoves(updatedMoves);
+  };
+
+  // --- LÓGICA DE REPORTE DE DAÑO E IMAGEN ---
+  const openDamageModal = (id) => {
+    setDamageJobId(id);
+    setDamageDescription('');
+    setSelectedImage(null); // Limpiar imagen previa
+    setIsDamageModalOpen(true);
+  };
+
+  // Función mágica para leer la imagen del input
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        if (!file.type.startsWith('image/')) {
+            alert('Por favor selecciona solo archivos de imagen.');
+            return;
+        }
+        // Límite de tamaño (ej. 2MB para no saturar localStorage)
+        if (file.size > 2 * 1024 * 1024) {
+            alert('La imagen es muy pesada. Intenta con una más pequeña (Max 2MB).');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setSelectedImage(reader.result); // Esto es la imagen en Base64
+        };
+        reader.readAsDataURL(file);
+    }
+  };
+
+
+  const saveDamageReport = () => {
+    if (!damageDescription.trim()) return;
+
+    const updatedMoves = moves.map(m => {
+        if (m.id === damageJobId) {
+            return { 
+                ...m, 
+                damageReport: {
+                    text: damageDescription,
+                    hasImage: !!selectedImage, // Booleano para saber si hay foto
+                    reportedBy: user.name,
+                    date: new Date().toLocaleString()
+                }
+            };
+        }
+        return m;
+    });
 
     updateMoves(updatedMoves);
-    setNewMessage('');
+    
+    // Agregamos la nota al chat CON la imagen si existe
+    addComment(
+        damageJobId, 
+        `⚠️ REPORTE DE DAÑO EN RECEPCIÓN: ${damageDescription}`, 
+        'SISTEMA', 
+        'Alerta',
+        selectedImage // Pasamos la imagen Base64
+    );
+
+    setIsDamageModalOpen(false);
   };
+
 
   // --- VISTAS ---
   const renderSupervisorView = () => {
@@ -175,7 +244,7 @@ export default function MoldSystem() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Columna: Listos */}
+          {/* Listos */}
           <div className="bg-white border border-gray-200 shadow-sm">
             <div className="bg-green-600 text-white p-3 font-bold uppercase text-sm flex justify-between">
               <span>Configuraciones Terminadas</span>
@@ -193,9 +262,7 @@ export default function MoldSystem() {
                     <button onClick={() => openChat(m)} className="text-gray-400 hover:text-blue-600 relative">
                         <MessageSquare className="w-5 h-5" />
                         {(m.comments && m.comments.length > 0) && (
-                            <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
-                                {m.comments.length}
-                            </span>
+                            <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">{m.comments.length}</span>
                         )}
                     </button>
                     <div className="text-right">
@@ -208,7 +275,7 @@ export default function MoldSystem() {
             </div>
           </div>
 
-          {/* Columna: Pendientes */}
+          {/* Pendientes */}
           <div className="bg-white border border-gray-200 shadow-sm">
             <div className="bg-gray-700 text-white p-3 font-bold uppercase text-sm flex justify-between">
               <span>En Espera (Reloj Activo)</span>
@@ -216,27 +283,35 @@ export default function MoldSystem() {
             </div>
             <div className="p-4 space-y-3">
               {pending.map(m => (
-                <div key={m.id} className="border-b border-gray-100 pb-2 flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-sm text-gray-700">{m.mold}</span>
-                    <div className="text-xs text-gray-500 mt-1">{m.requestDate}</div>
+                <div key={m.id} className="border-b border-gray-100 pb-2">
+                  <div className="flex justify-between items-center mb-1">
+                    <div>
+                        <span className="font-bold text-sm text-gray-700">{m.mold}</span>
+                        <div className="text-xs text-gray-500">{m.requestDate}</div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                        {/* ALERTA DE DAÑO SI EXISTE */}
+                        {m.damageReport && (
+                            <div className="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold border border-red-200 flex items-center animate-pulse" title={m.damageReport.text}>
+                                <AlertOctagon className="w-3 h-3 mr-1" /> DAÑO PREVIO
+                                {m.damageReport.hasImage && <Camera className="w-3 h-3 ml-1" />}
+                            </div>
+                        )}
+
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${m.priority === 1 ? 'bg-red-100 text-red-600' : 'bg-gray-100'}`}>P{m.priority}</span>
+                        <span className="text-[10px] text-red-600 font-bold uppercase animate-pulse">Running</span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-3">
-                     {/* Botón Chat Supervisor */}
-                     <button onClick={() => openChat(m)} className="text-gray-400 hover:text-blue-600 relative" title="Agregar comentario">
-                        <MessageSquare className="w-5 h-5" />
+                  
+                  <div className="flex justify-between items-center mt-2">
+                      <button onClick={() => openChat(m)} className="text-gray-400 hover:text-blue-600 relative flex items-center text-xs">
+                        <MessageSquare className="w-4 h-4 mr-1" /> Comentarios
                         {(m.comments && m.comments.length > 0) && (
-                            <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
-                                {m.comments.length}
-                            </span>
+                            <span className="ml-1 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">{m.comments.length}</span>
                         )}
                      </button>
-                     
-                     <div className="flex flex-col items-end">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${m.priority === 1 ? 'bg-red-100 text-red-600' : 'bg-gray-100'}`}>P{m.priority}</span>
-                        <span className="text-[10px] text-red-600 font-bold mt-1 uppercase animate-pulse">Running</span>
-                     </div>
-                     {user.role === 'Administrador' && <button onClick={() => handleDelete(m.id)} className="text-red-500 hover:underline text-xs"><AlertTriangle className="w-4 h-4"/></button>}
+                     {user.role === 'Administrador' && <button onClick={() => handleDelete(m.id)} className="text-red-500 hover:underline text-xs flex items-center"><AlertTriangle className="w-3 h-3 mr-1"/> Eliminar</button>}
                   </div>
                 </div>
               ))}
@@ -267,8 +342,8 @@ export default function MoldSystem() {
                 <th className="p-4">Prioridad</th>
                 <th className="p-4">Molde</th>
                 <th className="p-4">Hora Inicio</th>
-                <th className="p-4 text-center">Bitácora</th>
-                <th className="p-4 text-right">Acción</th>
+                <th className="p-4 text-center">Estado</th>
+                <th className="p-4 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -277,31 +352,44 @@ export default function MoldSystem() {
                   <td className="p-4">
                     <span className={`font-bold px-2 py-1 rounded-sm ${m.priority === 1 ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-200 text-gray-700'}`}>P{m.priority}</span>
                   </td>
-                  <td className="p-4 font-medium">{m.mold}</td>
+                  <td className="p-4 font-medium">
+                      {m.mold}
+                      {/* Mostrar alerta con icono de cámara si hay daño y foto */}
+                      {m.damageReport && (
+                        <div className="mt-1 flex items-center text-red-600 text-[10px] font-bold uppercase">
+                            <AlertOctagon className="w-3 h-3 mr-1" /> Daño Reportado
+                            {m.damageReport.hasImage && <Camera className="w-3 h-3 ml-1" />}
+                        </div>
+                      )}
+                  </td>
                   <td className="p-4 text-gray-500 text-xs">{m.requestDate}</td>
                   <td className="p-4 text-center">
-                    {/* Botón Chat Mantenimiento */}
-                    <button 
-                        onClick={() => openChat(m)} 
-                        className="text-gray-400 hover:text-blue-600 relative inline-block p-1"
-                        title="Ver comentarios"
-                    >
+                    <button onClick={() => openChat(m)} className="text-gray-400 hover:text-blue-600 relative inline-block p-1">
                         <MessageSquare className="w-5 h-5" />
                         {(m.comments && m.comments.length > 0) && (
-                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">
-                                {m.comments.length}
-                            </span>
+                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full">{m.comments.length}</span>
                         )}
                     </button>
                   </td>
-                  <td className="p-4 text-right">
+                  <td className="p-4 text-right flex justify-end gap-2">
+                    {/* BOTÓN REPORTE DE DAÑO */}
+                    {!m.damageReport && m.status !== 'Listo' && (
+                        <button 
+                            onClick={() => openDamageModal(m.id)}
+                            className="text-gray-400 hover:text-red-600 border border-gray-300 hover:border-red-600 p-1.5 rounded-sm transition-colors"
+                            title="Reportar Daño en Recepción"
+                        >
+                            <ShieldAlert className="w-4 h-4" />
+                        </button>
+                    )}
+
                     {m.status === 'Pendiente' && (
-                      <button onClick={() => handleStartJob(m.id)} className="bg-blue-600 text-white px-3 py-1 rounded-sm text-xs font-bold hover:bg-blue-700 flex items-center ml-auto">
+                      <button onClick={() => handleStartJob(m.id)} className="bg-blue-600 text-white px-3 py-1 rounded-sm text-xs font-bold hover:bg-blue-700 flex items-center">
                         <PlayCircle className="w-3 h-3 mr-1" /> Atender
                       </button>
                     )}
                     {m.status === 'En Proceso' && (
-                      <button onClick={() => openFinishChecklist(m.id)} className="bg-green-600 text-white px-3 py-1 rounded-sm text-xs font-bold hover:bg-green-700 flex items-center ml-auto">
+                      <button onClick={() => openFinishChecklist(m.id)} className="bg-green-600 text-white px-3 py-1 rounded-sm text-xs font-bold hover:bg-green-700 flex items-center">
                         <CheckCircle className="w-3 h-3 mr-1" /> Finalizar
                       </button>
                     )}
@@ -330,7 +418,69 @@ export default function MoldSystem() {
         </div>
       )}
 
-      {/* --- MODAL DE CHECKLIST (Calidad) --- */}
+      {/* --- MODAL DE REPORTE DE DAÑO CON FOTO --- */}
+      {isDamageModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white w-full max-w-md rounded-sm shadow-2xl border-t-4 border-red-600">
+                <div className="p-4 border-b border-gray-200 bg-red-50 flex justify-between items-center">
+                    <h3 className="font-bold text-red-800 uppercase text-sm flex items-center">
+                        <ShieldAlert className="w-5 h-5 mr-2"/> Reporte de Daño en Recepción
+                    </h3>
+                    <button onClick={() => setIsDamageModalOpen(false)}><X className="w-5 h-5 text-red-400 hover:text-red-700" /></button>
+                </div>
+                <div className="p-6">
+                    <p className="text-xs text-gray-600 mb-4">
+                        Describe el daño o anomalía encontrada y adjunta evidencia fotográfica si es posible.
+                    </p>
+                    <textarea 
+                        className="w-full border border-gray-300 rounded-sm p-3 text-sm focus:outline-none focus:border-red-600 h-24 resize-none mb-4"
+                        placeholder="Descripción del daño..."
+                        value={damageDescription}
+                        onChange={(e) => setDamageDescription(e.target.value)}
+                    ></textarea>
+
+                    {/* INPUT DE CÁMARA */}
+                    <div className="mb-6">
+                        <input type="file" id="photo-upload" hidden accept="image/*" onChange={handleImageChange} />
+                        <label htmlFor="photo-upload" className={`flex items-center justify-center w-full p-3 border-2 border-dashed rounded-sm cursor-pointer transition-colors ${selectedImage ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 hover:border-red-400 text-gray-500'}`}>
+                            {!selectedImage ? (
+                                <>
+                                    <Camera className="w-5 h-5 mr-2" />
+                                    <span className="text-sm font-bold uppercase">Adjuntar Fotografía</span>
+                                </>
+                            ) : (
+                                <div className="flex flex-col items-center">
+                                    <ImageIcon className="w-6 h-6 mb-1" />
+                                    <span className="text-xs font-bold">Imagen seleccionada</span>
+                                    <span className="text-[10px] mt-1">(Click para cambiar)</span>
+                                </div>
+                            )}
+                        </label>
+                        {selectedImage && (
+                            <div className="mt-2 p-1 border border-gray-200">
+                                <img src={selectedImage} alt="Preview" className="w-full h-32 object-cover" />
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="flex gap-2 justify-end border-t pt-4">
+                        <button onClick={() => setIsDamageModalOpen(false)} className="px-4 py-2 border border-gray-300 text-gray-600 font-bold text-xs uppercase rounded-sm hover:bg-gray-50">
+                            Cancelar
+                        </button>
+                        <button 
+                            onClick={saveDamageReport} 
+                            disabled={!damageDescription.trim()}
+                            className="px-4 py-2 bg-red-600 text-white font-bold text-xs uppercase rounded-sm hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                            Registrar Daño
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE CHECKLIST --- */}
       {isChecklistOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white w-full max-w-md rounded-sm shadow-2xl border-t-4 border-honeywell-red">
@@ -377,46 +527,51 @@ export default function MoldSystem() {
         </div>
       )}
 
-      {/* --- MODAL DE BITÁCORA (Chat) --- */}
+      {/* --- MODAL DE BITÁCORA (Con Fotos) --- */}
       {isChatOpen && chatJob && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white w-full max-w-lg h-[500px] flex flex-col rounded-sm shadow-2xl">
-                {/* Header Chat */}
                 <div className="p-4 border-b border-gray-200 bg-gray-900 text-white flex justify-between items-center rounded-t-sm">
                     <div>
                         <h3 className="font-bold uppercase text-sm flex items-center">
                             <MessageSquare className="w-4 h-4 mr-2 text-honeywell-red"/> Bitácora de Incidencias
                         </h3>
-                        <p className="text-xs text-gray-400 mt-1">{chatJob.mold} - Solicitud #{chatJob.id.toString().slice(-4)}</p>
+                        <p className="text-xs text-gray-400 mt-1">{chatJob.mold}</p>
                     </div>
                     <button onClick={() => setIsChatOpen(false)}><X className="w-5 h-5 text-gray-400 hover:text-white" /></button>
                 </div>
 
-                {/* Área de Mensajes (Scroll) */}
                 <div className="flex-1 bg-gray-50 p-4 overflow-y-auto space-y-4">
                     {(!chatJob.comments || chatJob.comments.length === 0) && (
                         <div className="text-center text-gray-400 text-xs italic mt-10">
                             <p>No hay comentarios registrados.</p>
-                            <p>Utiliza este espacio para reportar detalles técnicos.</p>
                         </div>
                     )}
                     
                     {chatJob.comments && chatJob.comments.map((msg) => (
                         <div key={msg.id} className={`flex flex-col ${msg.author === user.name ? 'items-end' : 'items-start'}`}>
-                            <div className={`max-w-[80%] rounded-sm p-3 shadow-sm border ${msg.author === user.name ? 'bg-white border-blue-200' : 'bg-white border-gray-200'}`}>
+                            <div className={`max-w-[85%] rounded-sm p-3 shadow-sm border ${msg.role === 'Alerta' ? 'bg-red-50 border-red-200' : msg.author === user.name ? 'bg-white border-blue-200' : 'bg-white border-gray-200'}`}>
                                 <div className="flex justify-between items-center mb-1 gap-4">
-                                    <span className={`text-[10px] font-bold uppercase ${msg.author === user.name ? 'text-blue-700' : 'text-gray-600'}`}>
+                                    <span className={`text-[10px] font-bold uppercase ${msg.role === 'Alerta' ? 'text-red-700' : msg.author === user.name ? 'text-blue-700' : 'text-gray-600'}`}>
                                         {msg.author} ({msg.role})
                                     </span>
                                     <span className="text-[9px] text-gray-400">{msg.date}</span>
                                 </div>
-                                <p className="text-sm text-gray-800 leading-snug">{msg.text}</p>
+                                <p className={`text-sm leading-snug ${msg.role === 'Alerta' ? 'text-red-800 font-bold' : 'text-gray-800'}`}>{msg.text}</p>
+                                
+                                {/* VISUALIZACIÓN DE IMAGEN EN EL CHAT */}
+                                {msg.image && (
+                                    <div className="mt-2">
+                                        <img src={msg.image} alt="Evidencia" className="rounded-sm border border-gray-200 w-full h-auto max-h-40 object-cover" />
+                                        <p className="text-[9px] text-gray-400 mt-1 flex items-center"><Camera className="w-3 h-3 mr-1"/> Evidencia fotográfica adjunta</p>
+                                    </div>
+                                )}
+
                             </div>
                         </div>
                     ))}
                 </div>
 
-                {/* Input de Mensaje */}
                 <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200 bg-white">
                     <div className="flex gap-2">
                         <input 
@@ -426,18 +581,12 @@ export default function MoldSystem() {
                             value={newMessage}
                             onChange={(e) => setNewMessage(e.target.value)}
                         />
-                        <button 
-                            type="submit" 
-                            className="bg-honeywell-red hover:bg-red-700 text-white px-4 rounded-sm transition-colors"
-                        >
-                            <Send className="w-4 h-4" />
-                        </button>
+                        <button type="submit" className="bg-honeywell-red hover:bg-red-700 text-white px-4 rounded-sm transition-colors"><Send className="w-4 h-4" /></button>
                     </div>
                 </form>
             </div>
          </div>
       )}
-
     </div>
   );
 }

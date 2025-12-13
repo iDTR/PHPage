@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Download, Calendar, Filter, User, MessageSquare, X } from 'lucide-react';
+import { Search, FileText, Download, Calendar, Filter, User, MessageSquare, X, Camera } from 'lucide-react';
 import { getMoves } from '../utils/storage';
 
 export default function History() {
@@ -164,7 +164,7 @@ export default function History() {
         Registros históricos: {filteredMoves.length}
       </div>
 
-      {/* --- MODAL VISOR DE CHAT (Solo Lectura) --- */}
+      {/* --- MODAL VISOR DE CHAT (Solo Lectura + FOTOS) --- */}
       {selectedChat && (
          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="bg-white w-full max-w-lg h-[500px] flex flex-col rounded-sm shadow-2xl">
@@ -183,14 +183,25 @@ export default function History() {
                 <div className="flex-1 bg-gray-50 p-4 overflow-y-auto space-y-4">
                     {selectedChat.comments && selectedChat.comments.map((msg) => (
                         <div key={msg.id} className="flex flex-col items-start">
-                            <div className="w-full bg-white rounded-sm p-3 shadow-sm border border-gray-200">
+                            <div className={`w-full bg-white rounded-sm p-3 shadow-sm border ${msg.role === 'Alerta' ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}>
                                 <div className="flex justify-between items-center mb-1 border-b border-gray-100 pb-1">
-                                    <span className="text-[10px] font-bold uppercase text-gray-600">
+                                    <span className={`text-[10px] font-bold uppercase ${msg.role === 'Alerta' ? 'text-red-700' : 'text-gray-600'}`}>
                                         {msg.author} <span className="text-gray-400">({msg.role})</span>
                                     </span>
                                     <span className="text-[9px] text-gray-400">{msg.date}</span>
                                 </div>
-                                <p className="text-sm text-gray-800 leading-snug mt-1">{msg.text}</p>
+                                
+                                <p className={`text-sm leading-snug mt-1 ${msg.role === 'Alerta' ? 'text-red-800' : 'text-gray-800'}`}>
+                                    {msg.text}
+                                </p>
+
+                                {/* VISUALIZACIÓN DE FOTO HISTÓRICA */}
+                                {msg.image && (
+                                    <div className="mt-2">
+                                        <img src={msg.image} alt="Evidencia Histórica" className="rounded-sm border border-gray-200 w-full h-auto max-h-40 object-cover" />
+                                        <p className="text-[9px] text-gray-400 mt-1 flex items-center"><Camera className="w-3 h-3 mr-1"/> Evidencia Histórica</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
